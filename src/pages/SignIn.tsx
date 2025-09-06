@@ -19,6 +19,7 @@ interface Patron {
   name: string;
   assigned_number: number;
   contact?: string;
+  isAlreadySignedIn?: boolean;
 }
 
 export default function SignIn() {
@@ -39,28 +40,59 @@ export default function SignIn() {
     try {
       if (!query.trim()) return;
 
+      // Get current week number
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const weekNumber = Math.ceil(
+        ((now.getTime() - startOfYear.getTime()) / 86400000 +
+          startOfYear.getDay() +
+          1) /
+          7
+      );
+
       // Check if query is a number
       const isNumber = !isNaN(Number(query));
 
       const { data: patrons, error } = await supabase
         .from("patrons")
         .select("*")
-        .or(
-          // Search by assigned number if query is a number
-          isNumber
-            ? `assigned_number.eq.${query}`
-            : // Otherwise search by name or contact
-              `name.ilike.%${query}%,contact.ilike.%${query}%`
-        )
+        .or(isNumber ? `assigned_number.eq.${query}` : `name.ilike.%${query}%`)
         .limit(10);
 
       if (error) throw error;
 
-      setMatchingPatrons(patrons || []);
+      // Check which patrons have already signed in this week
+      if (patrons && patrons.length > 0) {
+        const patronIds = patrons.map((p) => p.id);
+        const { data: signIns, error: signInError } = await supabase
+          .from("sign_ins")
+          .select("patron_id")
+          .in("patron_id", patronIds)
+          .eq("week_number", weekNumber);
 
-      // If exactly one match is found, auto-select it
-      if (patrons && patrons.length === 1) {
-        setSelectedPatron(patrons[0]);
+        if (signInError) throw signInError;
+
+        const signedInPatronIds = new Set(
+          signIns?.map((s) => s.patron_id) || []
+        );
+
+        // Add sign-in status to patrons
+        const patronsWithStatus = patrons.map((patron) => ({
+          ...patron,
+          isAlreadySignedIn: signedInPatronIds.has(patron.id),
+        }));
+
+        setMatchingPatrons(patronsWithStatus);
+
+        // If exactly one match is found and they haven't signed in, auto-select them
+        if (
+          patronsWithStatus.length === 1 &&
+          !patronsWithStatus[0].isAlreadySignedIn
+        ) {
+          setSelectedPatron(patronsWithStatus[0]);
+        }
+      } else {
+        setMatchingPatrons([]);
       }
     } catch (error) {
       toast({
@@ -78,13 +110,16 @@ export default function SignIn() {
 
   // Handle patron selection
   const handlePatronSelect = (patron: Patron) => {
+    if (patron.isAlreadySignedIn) {
+      return; // Don't allow selection of already signed-in patrons
+    }
     setSelectedPatron(patron);
     setSearchQuery(`${patron.name} (#${patron.assigned_number})`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPatron) return;
+    if (!selectedPatron || selectedPatron.isAlreadySignedIn) return;
 
     setIsLoading(true);
 
@@ -98,26 +133,6 @@ export default function SignIn() {
           1) /
           7
       );
-
-      // Check if already signed in this week
-      const { data: existingSignIn, error: signInCheckError } = await supabase
-        .from("sign_ins")
-        .select("id")
-        .eq("patron_id", selectedPatron.id)
-        .eq("week_number", weekNumber)
-        .single();
-
-      if (existingSignIn && !signInCheckError) {
-        toast({
-          title: "Already signed in",
-          description: "You have already signed in for this week",
-          status: "info",
-          duration: 5000,
-          isClosable: true,
-        });
-        navigate("/");
-        return;
-      }
 
       // Create sign-in record
       const { error: signInError } = await supabase.from("sign_ins").insert({
@@ -163,14 +178,14 @@ export default function SignIn() {
             </Text>
 
             <FormControl isRequired>
-              <FormLabel>Search by Number, Name, or Phone</FormLabel>
+              <FormLabel>Search by Number or Name</FormLabel>
               <Input
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   searchPatrons(e.target.value);
                 }}
-                placeholder="Enter number, name, or phone number"
+                placeholder="Enter number or name"
                 size="lg"
                 bg="white"
               />
@@ -189,21 +204,36 @@ export default function SignIn() {
                 </Text>
                 {(selectedPatron ? [selectedPatron] : matchingPatrons).map(
                   (patron) => (
-                    <Button
-                      key={patron.id}
-                      onClick={() => handlePatronSelect(patron)}
-                      variant={
-                        selectedPatron?.id === patron.id ? "solid" : "outline"
-                      }
-                      colorScheme={
-                        selectedPatron?.id === patron.id ? "green" : "gray"
-                      }
-                      size="lg"
-                      justifyContent="flex-start"
-                    >
-                      {patron.name} (#{patron.assigned_number})
-                      {patron.contact && ` - ${patron.contact}`}
-                    </Button>
+                    <Stack key={patron.id} spacing={1}>
+                      <Button
+                        onClick={() => handlePatronSelect(patron)}
+                        variant={
+                          selectedPatron?.id === patron.id ? "solid" : "outline"
+                        }
+                        colorScheme={
+                          patron.isAlreadySignedIn
+                            ? "gray"
+                            : selectedPatron?.id === patron.id
+                            ? "green"
+                            : "gray"
+                        }
+                        size="lg"
+                        justifyContent="flex-start"
+                        isDisabled={patron.isAlreadySignedIn}
+                        opacity={patron.isAlreadySignedIn ? 0.5 : 1}
+                        cursor={
+                          patron.isAlreadySignedIn ? "not-allowed" : "pointer"
+                        }
+                      >
+                        {patron.name} (#{patron.assigned_number})
+                        {patron.contact && ` - ${patron.contact}`}
+                      </Button>
+                      {patron.isAlreadySignedIn && (
+                        <Text fontSize="sm" color="gray.500" ml={4}>
+                          Already signed in for this week
+                        </Text>
+                      )}
+                    </Stack>
                   )
                 )}
               </Stack>
