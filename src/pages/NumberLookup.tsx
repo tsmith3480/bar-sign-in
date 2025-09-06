@@ -18,10 +18,10 @@ import {
   StatGroup,
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { usePatrons } from "../hooks";
 
 export default function NumberLookup() {
-  const [name, setName] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [patron, setPatron] = useState<{
     name: string;
@@ -30,22 +30,18 @@ export default function NumberLookup() {
   const toast = useToast();
   const navigate = useNavigate();
 
+  // Initialize hooks
+  const { searchPatrons } = usePatrons();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setPatron(null);
 
     try {
-      const { data, error } = await supabase
-        .from("patrons")
-        .select("name, assigned_number")
-        .ilike("name", `%${name}%`)
-        .order("name")
-        .limit(1);
+      const patrons = await searchPatrons(searchName);
 
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
+      if (!patrons || patrons.length === 0) {
         toast({
           title: "Not found",
           description: "No patron found with that name",
@@ -56,7 +52,9 @@ export default function NumberLookup() {
         return;
       }
 
-      setPatron(data[0]);
+      // Take the first match
+      const { name, assigned_number } = patrons[0];
+      setPatron({ name, assigned_number });
     } catch (error) {
       toast({
         title: "Lookup failed",
@@ -86,8 +84,8 @@ export default function NumberLookup() {
               <FormControl isRequired>
                 <FormLabel>Your Name</FormLabel>
                 <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
                   placeholder="Enter your name"
                   size="lg"
                   bg="white"

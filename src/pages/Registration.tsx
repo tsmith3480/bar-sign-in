@@ -12,7 +12,7 @@ import {
   Text,
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { usePatrons, useSignIns, useWeekUtils } from "../hooks";
 
 export default function Registration() {
   const [name, setName] = useState("");
@@ -20,6 +20,11 @@ export default function Registration() {
   const [isLoading, setIsLoading] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
+
+  // Initialize hooks
+  const { createPatron } = usePatrons();
+  const { createSignIn } = useSignIns();
+  const { getCurrentWeek } = useWeekUtils();
 
   // Format phone number as user types
   const formatPhoneNumber = (value: string) => {
@@ -62,55 +67,21 @@ export default function Registration() {
     setIsLoading(true);
 
     try {
-      // Get the highest assigned number
-      const { data: existingPatrons, error: fetchError } = await supabase
-        .from("patrons")
-        .select("assigned_number")
-        .order("assigned_number", { ascending: false })
-        .limit(1);
-
-      if (fetchError) throw fetchError;
-
-      // Calculate new number (start from 1 or increment highest)
-      const newNumber =
-        existingPatrons && existingPatrons[0]
-          ? existingPatrons[0].assigned_number + 1
-          : 1;
-
-      // Insert new patron
-      const { data: newPatron, error: insertError } = await supabase
-        .from("patrons")
-        .insert({
-          name,
-          contact: contact || null,
-          assigned_number: newNumber,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      // Get the current week number
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const weekNumber = Math.ceil(
-        ((now.getTime() - startOfYear.getTime()) / 86400000 +
-          startOfYear.getDay() +
-          1) /
-          7
-      );
-
-      // Create sign-in record for the current week
-      const { error: signInError } = await supabase.from("sign_ins").insert({
-        patron_id: newPatron.id,
-        week_number: weekNumber,
+      // Create new patron
+      const newPatron = await createPatron({
+        name,
+        contact: contact || undefined,
       });
 
-      if (signInError) throw signInError;
+      // Get the current week number
+      const weekNumber = getCurrentWeek();
+
+      // Create sign-in record for the current week
+      await createSignIn(newPatron.id, weekNumber);
 
       toast({
         title: "Registration successful!",
-        description: `Your assigned number is: ${newNumber}. You are automatically signed in for this week's drawing!`,
+        description: `Your assigned number is: ${newPatron.assigned_number}. You are automatically signed in for this week's drawing!`,
         status: "success",
         duration: 5000,
         isClosable: true,
