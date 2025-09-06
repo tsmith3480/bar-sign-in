@@ -12,15 +12,8 @@ import {
   Text,
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
-
-interface Patron {
-  id: string;
-  name: string;
-  assigned_number: number;
-  contact?: string;
-  isAlreadySignedIn?: boolean;
-}
+import { usePatrons, useSignIns, useWeekUtils } from "../hooks";
+import type { Patron } from "../types/database";
 
 export default function SignIn() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -30,6 +23,11 @@ export default function SignIn() {
   const [isSearching, setIsSearching] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
+
+  // Initialize hooks
+  const { searchPatrons: searchPatronsDB } = usePatrons();
+  const { enrichPatronsWithSignInStatus, createSignIn } = useSignIns();
+  const { getCurrentWeek } = useWeekUtils();
 
   // Search for patrons based on input
   const searchPatrons = async (query: string) => {
@@ -41,58 +39,25 @@ export default function SignIn() {
       if (!query.trim()) return;
 
       // Get current week number
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const weekNumber = Math.ceil(
-        ((now.getTime() - startOfYear.getTime()) / 86400000 +
-          startOfYear.getDay() +
-          1) /
-          7
+      const weekNumber = getCurrentWeek();
+
+      // Search for patrons
+      const patrons = await searchPatronsDB(query);
+
+      // Enrich patrons with sign-in status
+      const patronsWithStatus = await enrichPatronsWithSignInStatus(
+        patrons,
+        weekNumber
       );
 
-      // Check if query is a number
-      const isNumber = !isNaN(Number(query));
+      setMatchingPatrons(patronsWithStatus);
 
-      const { data: patrons, error } = await supabase
-        .from("patrons")
-        .select("*")
-        .or(isNumber ? `assigned_number.eq.${query}` : `name.ilike.%${query}%`)
-        .limit(10);
-
-      if (error) throw error;
-
-      // Check which patrons have already signed in this week
-      if (patrons && patrons.length > 0) {
-        const patronIds = patrons.map((p) => p.id);
-        const { data: signIns, error: signInError } = await supabase
-          .from("sign_ins")
-          .select("patron_id")
-          .in("patron_id", patronIds)
-          .eq("week_number", weekNumber);
-
-        if (signInError) throw signInError;
-
-        const signedInPatronIds = new Set(
-          signIns?.map((s) => s.patron_id) || []
-        );
-
-        // Add sign-in status to patrons
-        const patronsWithStatus = patrons.map((patron) => ({
-          ...patron,
-          isAlreadySignedIn: signedInPatronIds.has(patron.id),
-        }));
-
-        setMatchingPatrons(patronsWithStatus);
-
-        // If exactly one match is found and they haven't signed in, auto-select them
-        if (
-          patronsWithStatus.length === 1 &&
-          !patronsWithStatus[0].isAlreadySignedIn
-        ) {
-          setSelectedPatron(patronsWithStatus[0]);
-        }
-      } else {
-        setMatchingPatrons([]);
+      // If exactly one match is found and they haven't signed in, auto-select them
+      if (
+        patronsWithStatus.length === 1 &&
+        !patronsWithStatus[0].isAlreadySignedIn
+      ) {
+        setSelectedPatron(patronsWithStatus[0]);
       }
     } catch (error) {
       toast({
@@ -124,23 +89,11 @@ export default function SignIn() {
     setIsLoading(true);
 
     try {
-      // Get the current week number (based on ISO week)
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const weekNumber = Math.ceil(
-        ((now.getTime() - startOfYear.getTime()) / 86400000 +
-          startOfYear.getDay() +
-          1) /
-          7
-      );
+      // Get the current week number
+      const weekNumber = getCurrentWeek();
 
       // Create sign-in record
-      const { error: signInError } = await supabase.from("sign_ins").insert({
-        patron_id: selectedPatron.id,
-        week_number: weekNumber,
-      });
-
-      if (signInError) throw signInError;
+      await createSignIn(selectedPatron.id, weekNumber);
 
       toast({
         title: "Sign-in successful!",

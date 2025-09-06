@@ -18,7 +18,8 @@ import {
   StatGroup,
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { usePatrons } from "../hooks";
+import type { Patron } from "../types/database";
 
 export default function NumberLookup() {
   const [name, setName] = useState("");
@@ -30,22 +31,18 @@ export default function NumberLookup() {
   const toast = useToast();
   const navigate = useNavigate();
 
+  // Initialize hooks
+  const { searchPatrons } = usePatrons();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setPatron(null);
 
     try {
-      const { data, error } = await supabase
-        .from("patrons")
-        .select("name, assigned_number")
-        .ilike("name", `%${name}%`)
-        .order("name")
-        .limit(1);
+      const patrons = await searchPatrons(name);
 
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
+      if (!patrons || patrons.length === 0) {
         toast({
           title: "Not found",
           description: "No patron found with that name",
@@ -56,7 +53,11 @@ export default function NumberLookup() {
         return;
       }
 
-      setPatron(data[0]);
+      // Take the first match
+      setPatron({
+        name: patrons[0].name,
+        assigned_number: patrons[0].assigned_number,
+      });
     } catch (error) {
       toast({
         title: "Lookup failed",
