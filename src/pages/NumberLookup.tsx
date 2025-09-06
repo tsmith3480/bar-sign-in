@@ -19,7 +19,6 @@ import {
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
 import { usePatrons } from "../hooks";
-import type { Patron } from "../types/database";
 
 export default function NumberLookup() {
   const [name, setName] = useState("");
