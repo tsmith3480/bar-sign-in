@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Button,
@@ -99,7 +99,7 @@ export default function Admin() {
   };
 
   // Load week stats with error handling
-  const loadWeekStats = async () => {
+  const loadWeekStats = useCallback(async () => {
     try {
       const stats = await fetchWeekStats();
       setCurrentWeek(stats);
@@ -113,7 +113,7 @@ export default function Admin() {
         isClosable: true,
       });
     }
-  };
+  }, [fetchWeekStats, toast]);
 
   // Reset drawing function
   const resetDrawing = async () => {
@@ -156,8 +156,7 @@ export default function Admin() {
   // Load initial stats
   useEffect(() => {
     loadWeekStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, [loadWeekStats]);
 
   return (
     <Box p={8} bg="gray.50" minH="100vh">

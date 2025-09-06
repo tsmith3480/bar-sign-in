@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import type { SignIn, Patron } from "../types/database";
 
+const NO_ROWS_ERROR_CODE = "PGRST116"; // PGRST116 is "no rows returned"
+
 export const useSignIns = () => {
   const checkSignInStatus = useCallback(
     async (patronId: string, weekNumber: number): Promise<boolean> => {
@@ -12,7 +14,7 @@ export const useSignIns = () => {
         .eq("week_number", weekNumber)
         .single();
 
-      if (error && error.code !== "PGRST116") throw error; // PGRST116 is "no rows returned"
+      if (error && error.code !== NO_ROWS_ERROR_CODE) throw error;
       return !!existingSignIn;
     },
     []

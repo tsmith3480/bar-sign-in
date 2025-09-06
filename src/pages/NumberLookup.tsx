@@ -21,7 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { usePatrons } from "../hooks";
 
 export default function NumberLookup() {
-  const [name, setName] = useState("");
+  const [searchName, setSearchName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [patron, setPatron] = useState<{
     name: string;
@@ -39,7 +39,7 @@ export default function NumberLookup() {
     setPatron(null);
 
     try {
-      const patrons = await searchPatrons(name);
+      const patrons = await searchPatrons(searchName);
 
       if (!patrons || patrons.length === 0) {
         toast({
@@ -53,10 +53,8 @@ export default function NumberLookup() {
       }
 
       // Take the first match
-      setPatron({
-        name: patrons[0].name,
-        assigned_number: patrons[0].assigned_number,
-      });
+      const { name, assigned_number } = patrons[0];
+      setPatron({ name, assigned_number });
     } catch (error) {
       toast({
         title: "Lookup failed",
@@ -86,8 +84,8 @@ export default function NumberLookup() {
               <FormControl isRequired>
                 <FormLabel>Your Name</FormLabel>
                 <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
                   placeholder="Enter your name"
                   size="lg"
                   bg="white"
